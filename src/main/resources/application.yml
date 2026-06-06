@@ -1,0 +1,108 @@
+spring:
+  application:
+    name: payment-processing-engine
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payments_db
+    username: ${DB_USERNAME:payments_user}
+    password: ${DB_PASSWORD:payments_pass}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 300000
+      connection-timeout: 20000
+      leak-detection-threshold: 60000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate          # Flyway manages schema — never let JPA auto-create
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        default_batch_fetch_size: 50
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          min-idle: 2
+          max-active: 8
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all                   # Wait for all ISR replicas to acknowledge
+      retries: 3
+      properties:
+        enable.idempotence: true  # Exactly-once producer semantics
+        max.in.flight.requests.per.connection: 1
+    consumer:
+      group-id: payment-engine
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.rajasekhar.payment.domain.event"
+
+app:
+  kafka:
+    topics:
+      payment-initiated: payments.initiated
+      payment-completed: payments.completed
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# Resilience4j configuration
+resilience4j:
+  circuitbreaker:
+    instances:
+      paymentGateway:
+        sliding-window-size: 10
+        failure-rate-threshold: 50       # Open circuit after 50% failures
+        wait-duration-in-open-state: 30s # Wait 30s before trying half-open
+        permitted-number-of-calls-in-half-open-state: 3
+        slow-call-duration-threshold: 5s
+        slow-call-rate-threshold: 80
+
+  ratelimiter:
+    instances:
+      paymentRateLimiter:
+        limit-for-period: 100            # 100 calls per refresh period
+        limit-refresh-period: 1s
+        timeout-duration: 0ms
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+
+logging:
+  level:
+    com.rajasekhar.payment: INFO
+    org.springframework.kafka: WARN
+    org.hibernate.SQL: WARN
