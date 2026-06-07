@@ -42,10 +42,12 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
-          cache: maven
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
 
       - name: Build and test
-        run: mvn -B verify
+        run: ./gradlew build
         env:
           DB_USERNAME: test_user
           DB_PASSWORD: test_pass
@@ -56,4 +58,4 @@ jobs:
         if: always()
         with:
           name: test-results
-          path: target/surefire-reports/
+          path: build/reports/tests/
